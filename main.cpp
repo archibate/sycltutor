@@ -4,10 +4,16 @@
 #include <random>
 #include <cassert>
 #include <sycl/sycl.hpp>
+#include "get_selected_device.h"
 
 class reduction_kernel;
 
 int main(int, char**) {
+    auto device = get_selected_device();
+    auto queue = sycl::queue(device, [] (sycl::exception_list el) {
+        for (auto ex : el) { std::rethrow_exception(ex); }
+    } );
+
     auto arr = std::array<int32_t, 16>();
 
     auto mt_engine = std::mt19937(std::random_device{}());
@@ -21,12 +27,6 @@ int main(int, char**) {
     std::cout << std::endl;
 
     auto buf = sycl::buffer<int32_t, 1>(arr.data(), sycl::range<1>(arr.size()));
-
-    auto device = sycl::device(sycl::gpu_selector_v);
-
-    auto queue = sycl::queue(device, [] (sycl::exception_list el) {
-        for (auto ex : el) { std::rethrow_exception(ex); }
-    } );
 
     // <<Set up queue and check device information>>
     /* Here we manually set the Work Group size to 32, 

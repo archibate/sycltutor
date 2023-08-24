@@ -142,4 +142,6 @@ Source: https://forum.manjaro.org/t/clinfo-and-codes-using-opencl-hangs-forever-
 
 # References
 
-SYCL official guide (cheetsheet): https://www.khronos.org/files/sycl/sycl-2020-reference-guide.pdf
+- SYCL official guide (cheetsheet): https://www.khronos.org/files/sycl/sycl-2020-reference-guide.pdf
+- SYCL official specification: https://registry.khronos.org/SYCL/specs/sycl-2020/html/sycl-2020.html
+- Parallel STL based on SYCL: https://github.com/KhronosGroup/SyclParallelSTL

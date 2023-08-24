@@ -24,4 +24,5 @@ endif()
 add_compile_options(-DHIPSYCL_DEBUG_LEVEL=${OPENSYCL_DEBUG_LEVEL})
 
 add_executable(main main.cpp)
+target_include_directories(main PUBLIC ../SyclParallelSTL/include)
 add_sycl_to_target(TARGET main SOURCES main.cpp)
