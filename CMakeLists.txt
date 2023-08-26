@@ -34,3 +34,13 @@ endif()
 
 add_executable(main main.cpp)
 add_sycl_to_target(TARGET main SOURCES main.cpp)
+
+find_package(benchmark CONFIG REQUIRED)
+target_link_libraries(main PUBLIC benchmark::benchmark benchmark::benchmark_main)
+
+# find_package(OpenMP)
+# if (TARGET OpenMP::OpenMP_CXX)
+#     target_link_libraries(main PUBLIC OpenMP::OpenMP_CXX)
+# else()
+#     message(WARNING "OpenMP for C++ not found")
+# endif()
