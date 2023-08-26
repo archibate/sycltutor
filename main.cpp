@@ -1,88 +1,53 @@
 #include <sycl/sycl.hpp>
 #include <benchmark/benchmark.h>
+#include "algo.h"
 
 using namespace sycl;
 
-template <class HistT, class ValT>
-void sycl_histogram(HistT *hist_p, size_t hist_n, ValT const *val_p, size_t val_n, int times) {
-    constexpr size_t k_block_size = 256;
-    constexpr size_t k_num_bins = 256;
-    constexpr size_t k_group_size = 128;
-    static queue q{gpu_selector_v};
-    buffer hist_buf{hist_p, range<1>{hist_n}};
-    buffer val_buf{val_p, range<1>{val_n}};
-    for (int i = 0; i < times; i++) {
-        q.submit([&] (handler &cgh) {
-            accessor hist_axr{hist_buf, cgh, read_write};
-            accessor val_axr{val_buf, cgh, read_only};
-            local_accessor<HistT> hist_loc{k_num_bins, cgh};
-            cgh.parallel_for(nd_range<1>{((val_n + k_block_size - 1) / k_block_size + k_group_size - 1) / k_group_size * k_group_size, k_group_size}, [=] (nd_item<1> it) {
-#if 1
-                auto i = it.get_global_id()[0];
-                auto li = it.get_local_id()[0];
-                hist_loc[li * 2] = 0;
-                hist_loc[li * 2 + 1] = 0;
-                it.barrier(access::fence_space::local_space);
-                for (size_t j = 0; j < k_block_size; j++) {
-                    if (i * k_block_size + j < val_axr.size()) {
-                        auto v = val_axr[i * k_block_size + j] % k_num_bins;
-                        atomic_ref<HistT, memory_order_relaxed, memory_scope_device, access::address_space::local_space>{hist_loc[v]}.fetch_add(HistT{1});
-                    }
-                }
-                it.barrier(access::fence_space::local_space);
-                atomic_ref<HistT, memory_order_relaxed, memory_scope_device, access::address_space::global_space>{hist_axr[li * 2]}.fetch_add(hist_loc[li * 2]);
-                atomic_ref<HistT, memory_order_relaxed, memory_scope_device, access::address_space::global_space>{hist_axr[li * 2 + 1]}.fetch_add(hist_loc[li * 2 + 1]);
-#else
-                size_t group = it.get_group()[0];
-                size_t gSize = it.get_local_range()[0];
-                auto sg = it.get_sub_group();
-                size_t sgSize = sg.get_local_range()[0];
-                size_t sgGroup = sg.get_group_id()[0];
+static queue g_queue{gpu_selector_v};
 
-                size_t factor = k_num_bins / gSize;
-                size_t local_id = it.get_local_id()[0];
-                if (factor <= 1 && local_id < k_num_bins) {
-                    atomic_ref<HistT, memory_order_relaxed, memory_scope_device, access::address_space::local_space>{hist_loc[local_id]}.store(HistT{0});
-                } else {
-                    for (size_t k = 0; k < factor; k++) {
-                        atomic_ref<HistT, memory_order_relaxed, memory_scope_device, access::address_space::local_space>{hist_loc[gSize * k + local_id]}.store(HistT{0});
-                    }
-                }
-                it.barrier(access::fence_space::local_space);
-                auto vbase = (group * gSize + sgGroup * sgSize) * k_block_size;
-                for (size_t k = 0; k < k_block_size; k++) {
-                    auto vid = vbase + sgSize * k;
-                    if (vid < val_axr.size()) {
-                        auto v = val_axr[vid] % k_num_bins;
-                        atomic_ref<HistT, memory_order_relaxed, memory_scope_device, access::address_space::local_space>{hist_loc[v]}.fetch_add(HistT{1});
-                    }
-                }
-                it.barrier(access::fence_space::local_space);
-                if (factor <= 1 && local_id < k_num_bins) {
-                    auto h = atomic_ref<HistT, memory_order_relaxed, memory_scope_device, access::address_space::local_space>{hist_loc[local_id]}.load();
-                    atomic_ref<HistT, memory_order_relaxed, memory_scope_device, access::address_space::global_space>{hist_axr[local_id]}.fetch_add(h);
-                } else {
-                    for (size_t k = 0; k < factor; k++) {
-                        auto v = val_axr[
-                            (group * gSize + sgGroup * sgSize) * k_block_size
-                            + sgSize * k] % k_num_bins;
-                        auto h = atomic_ref<HistT, memory_order_relaxed, memory_scope_device, access::address_space::local_space>{hist_loc[gSize * k + local_id]}.load();
-                        atomic_ref<HistT, memory_order_relaxed, memory_scope_device, access::address_space::global_space>{hist_axr[gSize * k + local_id]}.fetch_add(h);
-                    }
-                }
-#endif
-            });
-        }).wait_and_throw();
-    }
+template <class HistT, class ValT>
+void sycl_histogram(HistT *hist_p, size_t hist_n, ValT const *val_p, size_t val_n) {
+    buffer<HistT> hist_buf{hist_p, range<1>{hist_n}};
+    buffer<ValT> val_buf{val_p, range<1>{val_n}};
+    return parallel_histogram(g_queue, hist_buf, val_buf);
 }
 
 template <class HistT, class ValT>
-void cpu_histogram(HistT *hist_p, size_t hist_n, ValT const *val_p, size_t val_n, int times) {
+void dumb_parallel_histogram(HistT *hist_p, size_t hist_n, ValT const *val_p, size_t val_n) {
+    buffer hist_buf{hist_p, range<1>{hist_n}};
+    buffer val_buf{val_p, range<1>{val_n}};
+    g_queue.submit([&] (handler &cgh) {
+        constexpr size_t k_block_size = 256;
+        constexpr size_t k_num_bins = 256;
+        constexpr size_t k_group_size = 128;
+        accessor hist_axr{hist_buf, cgh, read_write};
+        accessor val_axr{val_buf, cgh, read_only};
+        local_accessor<HistT> hist_loc{k_num_bins, cgh};
+        cgh.parallel_for(nd_range<1>{((val_n + k_block_size - 1) / k_block_size + k_group_size - 1) / k_group_size * k_group_size, k_group_size}, [=] (nd_item<1> it) {
+            auto i = it.get_global_id()[0];
+            auto li = it.get_local_id()[0];
+            hist_loc[li * 2] = 0;
+            hist_loc[li * 2 + 1] = 0;
+            it.barrier(access::fence_space::local_space);
+            for (size_t j = 0; j < k_block_size; j++) {
+                if (i * k_block_size + j < val_axr.size()) {
+                    auto v = val_axr[i * k_block_size + j] % k_num_bins;
+                    atomic_ref<HistT, memory_order_relaxed, memory_scope_device, access::address_space::local_space>{hist_loc[v]}.fetch_add(HistT{1});
+                }
+            }
+            it.barrier(access::fence_space::local_space);
+            atomic_ref<HistT, memory_order_relaxed, memory_scope_device, access::address_space::global_space>{hist_axr[li * 2]}.fetch_add(hist_loc[li * 2]);
+            atomic_ref<HistT, memory_order_relaxed, memory_scope_device, access::address_space::global_space>{hist_axr[li * 2 + 1]}.fetch_add(hist_loc[li * 2 + 1]);
+        });
+    }).wait_and_throw();
+}
+
+template <class HistT, class ValT>
+void cpu_histogram(HistT *hist_p, size_t hist_n, ValT const *val_p, size_t val_n) {
     memset(hist_p, 0, hist_n * sizeof(HistT));
-    for (int i = 0; i < times; i++) {
-        for (size_t i = 0; i < val_n; i++) {
-            ++hist_p[val_p[i]];
-        }
+    for (size_t i = 0; i < val_n; i++) {
+        ++hist_p[val_p[i]];
     }
 }
 
@@ -116,6 +81,25 @@ struct AutoBenchArg {
 
     void init(T v, size_t) {
         inner = v;
+    }
+
+    bool test(AutoBenchArg const &, size_t, size_t) {
+        return true;
+    }
+};
+
+template <class T>
+struct AutoBenchArg<T &> {
+    T *inner;
+
+    using argument_type = std::reference_wrapper<T>;
+
+    T &get() {
+        return *inner;
+    }
+
+    void init(std::reference_wrapper<T> v, size_t) {
+        inner = &v.get();
     }
 
     bool test(AutoBenchArg const &, size_t, size_t) {
@@ -199,7 +183,7 @@ struct AutoBench<N, void(Ts...)> {
     template <size_t ...Is>
     void _impl_add_arguments(std::index_sequence<Is...>,
                          std::conditional_t<false, Ts, typename AutoBenchArg<Ts>::argument_type> ...argvals) const {
-        ((void)std::get<Is>(args).init(std::move(argvals), Is), ...);
+        ((void)std::get<Is>(args).init(argvals, Is), ...);
     }
 
     template <size_t ...Is>
@@ -233,6 +217,16 @@ class LambdaBenchmark : public ::benchmark::internal::Benchmark {
   Lambda lambda_;
 };
 
+template <class T>
+struct unwrap_reference {
+    using type = T;
+};
+
+template <class T>
+struct unwrap_reference<std::reference_wrapper<T>> {
+    using type = T &;
+};
+
 }
 
 template <size_t N, class ...Ts>
@@ -241,7 +235,8 @@ int doAutoBench(std::string const &title,
     std::conditional_t<false, Ts, typename
     _makeAutoBench_details::AutoBenchArg<Ts>::argument_type>
     ...argvals) {
-    _makeAutoBench_details::AutoBench<N, void(Ts...)> ab{std::move(fps)};
+    _makeAutoBench_details::AutoBench<N, void(
+        typename _makeAutoBench_details::unwrap_reference<Ts>::type...)> ab{std::move(fps)};
     ab._impl_add_arguments(std::make_index_sequence<sizeof...(Ts)>{}, argvals...);
     for (size_t i = 0; i < N; i++) {
         auto bmfunc = [=] (::benchmark::State &s) {
@@ -258,10 +253,10 @@ int doAutoBench(std::string const &title,
     return 0;
 }
 
-constexpr size_t n = 65536 * 64;
-constexpr size_t maxval = 256;
+constexpr size_t n = 65536 * 256;
+constexpr size_t maxval = 65536;
 
 static int bench_histogram_uint32_t = doAutoBench("histogram", std::array{
     cpu_histogram<uint32_t, uint32_t>,
     sycl_histogram<uint32_t, uint32_t>,
-}, maxval, maxval, {n, 0, maxval - 1}, n, 100);
+}, maxval, maxval, {n, 0, maxval - 1}, n);
