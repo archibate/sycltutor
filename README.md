@@ -35,6 +35,12 @@ cmake --build build --parallel 8
 
 > If you installed OpenSYCL to `/opt/sycl-0.9.4` in the previous step, you may need to `export OpenSYCL_DIR=/opt/sycl-0.9.4/lib/cmake/OpenSYCL` here too.
 
+Here is a possible value for the environment variable `OPENSYCL_TARGETS`:
+
+```bash
+export OPENSYCL_TARGETS="omp.accelerated;spirv;cuda:sm_60,sm_75,sm_80;hip:gfx906"
+```
+
 ## Running the project
 
 Running on CPU backend:
