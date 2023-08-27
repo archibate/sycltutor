@@ -10,8 +10,18 @@
 template <class T>
 void print_buffer(std::vector<T> const &buf) {
     std::cout << "CPU [ ";
-    for (size_t i = 0; i < buf.size(); i++) {
-        std::cout << buf[i] << ' ';
+    if (buf.size() > 1024) {
+        for (size_t i = 0; i < 128; i++) {
+            std::cout << buf[i] << ' ';
+        }
+        std::cout << "... ";
+        for (size_t i = buf.size() - 128; i < buf.size(); i++) {
+            std::cout << buf[i] << ' ';
+        }
+    } else {
+        for (size_t i = 0; i < buf.size(); i++) {
+            std::cout << buf[i] << ' ';
+        }
     }
     std::cout << "]\n";
 }
@@ -20,8 +30,18 @@ template <class T>
 void print_buffer(sycl::buffer<T> buf) {
     sycl::host_accessor<T> hacc{buf, sycl::read_only};
     std::cout << "GPU [ ";
-    for (size_t i = 0; i < hacc.size(); i++) {
-        std::cout << hacc[i] << ' ';
+    if (hacc.size() > 1024) {
+        for (size_t i = 0; i < 128; i++) {
+            std::cout << hacc[i] << ' ';
+        }
+        std::cout << "... ";
+        for (size_t i = hacc.size() - 128; i < hacc.size(); i++) {
+            std::cout << hacc[i] << ' ';
+        }
+    } else {
+        for (size_t i = 0; i < hacc.size(); i++) {
+            std::cout << hacc[i] << ' ';
+        }
     }
     std::cout << "]\n";
 }
@@ -66,12 +86,14 @@ void parallel_scan(sycl::queue &q, sycl::buffer<unsigned> &hist_group) {
 }
 
 class KT_radix_sort_histogram;
+class KT_radix_sort_compindex;
 class KT_radix_sort_reorder;
 
 void radix_sort(sycl::queue &q, sycl::buffer<unsigned> &buf) {
     using atomic_ref = sycl::atomic_ref<unsigned, sycl::memory_order_relaxed, sycl::memory_scope_device>;
     sycl::buffer<unsigned> buf_next{buf.size()};
     sycl::buffer<unsigned> hist_group{buf.size()};
+    sycl::buffer<unsigned> index_buf{buf.size()};
     for (int bit = 0; bit < 4; bit++) {
         q.submit([&] (sycl::handler &cgh) {
             sycl::local_accessor<unsigned> count{256, cgh};
@@ -92,24 +114,32 @@ void radix_sort(sycl::queue &q, sycl::buffer<unsigned> &buf) {
         });
         parallel_scan(q, hist_group);
         q.submit([&] (sycl::handler &cgh) {
+            sycl::local_accessor<unsigned> count{256 * 32, cgh};
             sycl::accessor<unsigned> hist{hist_group, cgh, sycl::read_only};
             sycl::accessor<unsigned> a{buf, cgh, sycl::read_only};
-            sycl::accessor<unsigned> aout{buf_next, cgh, sycl::write_only, sycl::no_init};
-            cgh.parallel_for<KT_radix_sort_reorder>(sycl::range<1>{buf.size() / 256}, [=] (sycl::item<1> it) {
-                int gn = it.get_range(0);
-                int gi = it.get_id(0);
-                unsigned count[256];
+            sycl::accessor<unsigned> indices{index_buf, cgh, sycl::write_only, sycl::no_init};
+            cgh.parallel_for<KT_radix_sort_compindex>(sycl::nd_range<1>{buf.size() / 256, 32}, [=] (sycl::nd_item<1> it) {
+                int li = it.get_local_id(0);
+                int gn = it.get_global_range(0);
+                int gi = it.get_global_id(0);
                 for (int ii = 0; ii < 256; ii++) {
-                    count[ii] = hist[ii * gn + gi];
+                    count[li + ii * 32] = hist[ii * gn + gi];
                 }
                 for (int ii = 0; ii < 256; ii++) {
                     int i = gi * 256 + ii;
-                    auto ai = a[i];
-                    unsigned key = (ai >> bit * 8) & 0xff;
-                    auto index = count[key];
-                    aout[index] = ai;
-                    count[key] = index + 1;
+                    unsigned key = (a[i] >> bit * 8) & 0xff;
+                    indices[i] = count[li + key * 32]++;
                 }
+            });
+        });
+        q.submit([&] (sycl::handler &cgh) {
+            sycl::accessor<unsigned> indices{index_buf, cgh, sycl::read_only};
+            sycl::accessor<unsigned> a{buf, cgh, sycl::read_only};
+            sycl::accessor<unsigned> aout{buf_next, cgh, sycl::write_only, sycl::no_init};
+            cgh.parallel_for<KT_radix_sort_reorder>(sycl::nd_range<1>{buf.size() / 2, 128}, [=] (sycl::nd_item<1> it) {
+                int i = it.get_global_id(0) * 2;
+                aout[indices[i]] = a[i];
+                aout[indices[i + 1]] = a[i + 1];
             });
         });
         q.submit([&] (sycl::handler &cgh) {
@@ -121,11 +151,11 @@ void radix_sort(sycl::queue &q, sycl::buffer<unsigned> &buf) {
 }
 
 int main() {
-    constexpr size_t n = 64 * 256 * 256;
+    constexpr size_t n = 2 * 256 * 256 * 256;
     {
         std::vector<unsigned int> arr(n);
         for (int i = 0; i < arr.size(); i++) {
-            arr[i] = wangshash(i)() % 10;
+            arr[i] = wangshash(i)();
         }
         TICK(tbb);
         {
@@ -137,7 +167,7 @@ int main() {
         sycl::queue q{sycl::gpu_selector_v};
         std::vector<unsigned int> arr(n);
         for (int i = 0; i < arr.size(); i++) {
-            arr[i] = wangshash(i)() % 10;
+            arr[i] = wangshash(i)();
         }
         TICK(radix);
         {
@@ -150,6 +180,7 @@ int main() {
         } else {
             printf("not sorted since %ld\n", it - arr.begin());
         }
+        print_buffer(arr);
     }
     return 0;
 }
