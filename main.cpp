@@ -2,6 +2,7 @@
 #include "wangshash.h"
 #include <vector>
 #include <chrono>
+#include <execution>
 #include <iostream>
 #define TICK(x) auto bench_##x = std::chrono::steady_clock::now();
 #define TOCK(x) std::cerr<<#x ": "<<std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now()-bench_##x).count();std::cerr<<"秒\n";
@@ -25,13 +26,16 @@ void print_buffer(sycl::buffer<T> buf) {
     std::cout << "]\n";
 }
 
+class KT_parallel_scan;
+class KT_parallel_scan_paste;
+
 void parallel_scan(sycl::queue &q, sycl::buffer<unsigned> &hist_group) {
     if (hist_group.size() <= 1) return;
     sycl::buffer<unsigned> glob_sum{(hist_group.size() + 255) / 256};
     q.submit([&] (sycl::handler &cgh) {
         sycl::accessor<unsigned> hist{hist_group, cgh, sycl::read_write};
         sycl::accessor<unsigned> gsum{glob_sum, cgh, sycl::write_only, sycl::no_init};
-        cgh.parallel_for(sycl::nd_range<1>{glob_sum.size() * 256, 256}, [=] (sycl::nd_item<1> it) {
+        cgh.parallel_for<KT_parallel_scan>(sycl::nd_range<1>{glob_sum.size() * 256, 256}, [=] (sycl::nd_item<1> it) {
             int ii = it.get_local_id(0);
             int gi = it.get_group(0);
             int i = it.get_global_id(0);
@@ -51,7 +55,7 @@ void parallel_scan(sycl::queue &q, sycl::buffer<unsigned> &hist_group) {
         q.submit([&] (sycl::handler &cgh) {
             sycl::accessor<unsigned> hist{hist_group, cgh, sycl::read_write};
             sycl::accessor<unsigned> gsum{glob_sum, cgh, sycl::read_only};
-            cgh.parallel_for(sycl::nd_range<1>{glob_sum.size() * 256, 256}, [=] (sycl::nd_item<1> it) {
+            cgh.parallel_for<KT_parallel_scan_paste>(sycl::nd_range<1>{glob_sum.size() * 256, 256}, [=] (sycl::nd_item<1> it) {
                 int gi = it.get_group(0);
                 int i = it.get_global_id(0);
                 if (i < hist.size())
@@ -60,6 +64,9 @@ void parallel_scan(sycl::queue &q, sycl::buffer<unsigned> &hist_group) {
         });
     }
 }
+
+class KT_radix_sort_histogram;
+class KT_radix_sort_reorder;
 
 void radix_sort(sycl::queue &q, sycl::buffer<unsigned> &buf) {
     using atomic_ref = sycl::atomic_ref<unsigned, sycl::memory_order_relaxed, sycl::memory_scope_device>;
@@ -70,7 +77,7 @@ void radix_sort(sycl::queue &q, sycl::buffer<unsigned> &buf) {
             sycl::local_accessor<unsigned> count{256, cgh};
             sycl::accessor<unsigned> hist{hist_group, cgh, sycl::write_only, sycl::no_init};
             sycl::accessor<unsigned> a{buf, cgh, sycl::read_only};
-            cgh.parallel_for(sycl::nd_range<1>{buf.size(), 256}, [=] (sycl::nd_item<1> it) {
+            cgh.parallel_for<KT_radix_sort_histogram>(sycl::nd_range<1>{buf.size(), 256}, [=] (sycl::nd_item<1> it) {
                 int ii = it.get_local_id(0);
                 int gi = it.get_group(0);
                 int gn = it.get_group_range(0);
@@ -88,9 +95,9 @@ void radix_sort(sycl::queue &q, sycl::buffer<unsigned> &buf) {
             sycl::accessor<unsigned> hist{hist_group, cgh, sycl::read_only};
             sycl::accessor<unsigned> a{buf, cgh, sycl::read_only};
             sycl::accessor<unsigned> aout{buf_next, cgh, sycl::write_only, sycl::no_init};
-            cgh.parallel_for(sycl::range<1>{buf.size() / 256}, [=] (sycl::item<1> it) {
-                int gi = it.get_id(0);
+            cgh.parallel_for<KT_radix_sort_reorder>(sycl::range<1>{buf.size() / 256}, [=] (sycl::item<1> it) {
                 int gn = it.get_range(0);
+                int gi = it.get_id(0);
                 unsigned count[256];
                 for (int ii = 0; ii < 256; ii++) {
                     count[ii] = hist[ii * gn + gi];
@@ -114,21 +121,35 @@ void radix_sort(sycl::queue &q, sycl::buffer<unsigned> &buf) {
 }
 
 int main() {
-    sycl::queue q{sycl::cpu_selector_v};
-    std::vector<unsigned int> arr(8 * 256);
-    for (int i = 0; i < arr.size(); i++) {
-        arr[i] = wangshash(i)() % 10;
-    }
-    TICK(t);
+    constexpr size_t n = 64 * 256 * 256;
     {
-        sycl::buffer<unsigned int> buf{arr};
-        radix_sort(q, buf);
+        std::vector<unsigned int> arr(n);
+        for (int i = 0; i < arr.size(); i++) {
+            arr[i] = wangshash(i)() % 10;
+        }
+        TICK(tbb);
+        {
+            std::sort(std::execution::par, arr.begin(), arr.end());
+        }
+        TOCK(tbb);
     }
-    TOCK(t);
-    if (auto it = std::is_sorted_until(arr.begin(), arr.end()); it == arr.end()) {
-        printf("sorted successfully\n");
-    } else {
-        printf("not sorted since %ld\n", it - arr.begin());
+    {
+        sycl::queue q{sycl::gpu_selector_v};
+        std::vector<unsigned int> arr(n);
+        for (int i = 0; i < arr.size(); i++) {
+            arr[i] = wangshash(i)() % 10;
+        }
+        TICK(radix);
+        {
+            sycl::buffer<unsigned int> buf{arr};
+            radix_sort(q, buf);
+        }
+        TOCK(radix);
+        if (auto it = std::is_sorted_until(arr.begin(), arr.end()); it == arr.end()) {
+            printf("sorted successfully\n");
+        } else {
+            printf("not sorted since %ld\n", it - arr.begin());
+        }
     }
     return 0;
 }
