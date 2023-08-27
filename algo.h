@@ -11,48 +11,26 @@ void parallel_sort(sycl::queue q, sycl::buffer<T> buf) {
     for (size_t tmp = vectorSize; tmp > 1; tmp >>= 1) {
         ++numStages;
     }
-    sycl::range<1> r{vectorSize / 2};
     for (int stage = 0; stage < numStages; ++stage) {
         // Every stage has stage + 1 passes
         for (int passOfStage = 0; passOfStage < stage + 1; ++passOfStage) {
-            q.submit([&] (sycl::handler &h) {
-                sycl::accessor a{buf, h, sycl::read_write};
-                h.parallel_for(
-                    sycl::range<1>{r},
-                    [a, stage, passOfStage](sycl::item<1> it) {
-                        int sortIncreasing = 1;
-                        int threadId = it.get_linear_id();
-
-                        int pairDistance = 1 << (stage - passOfStage);
-                        int blockWidth = 2 * pairDistance;
-
-                        int leftId = (threadId % pairDistance) +
-                            (threadId / pairDistance) * blockWidth;
-                        int rightId = leftId + pairDistance;
-
-                        T leftElement = a[leftId];
-                        T rightElement = a[rightId];
-
-                        int sameDirectionBlockWidth = 1 << stage;
-
-                        if ((threadId / sameDirectionBlockWidth) % 2 == 1) {
-                            sortIncreasing = 1 - sortIncreasing;
-                        }
-
-                        T greater;
-                        T lesser;
-
-                        if (leftElement > rightElement) {
-                            greater = leftElement;
-                            lesser = rightElement;
-                        } else {
-                            greater = rightElement;
-                            lesser = leftElement;
-                        }
-
-                        a[leftId] = sortIncreasing ? lesser : greater;
-                        a[rightId] = sortIncreasing ? greater : lesser;
-                    });
+            int pairDistanceShift = stage - passOfStage;
+            int pairDistanceMask = ~((1 << pairDistanceShift) - 1);
+            int pairDistance = 1 << pairDistanceShift;
+            q.submit([&] (sycl::handler &cgh) {
+                sycl::accessor a{buf, cgh, sycl::read_write};
+                cgh.parallel_for(vectorSize / 2, [=](size_t threadId) {
+                    int leftId = threadId + (threadId & pairDistanceMask);
+                    int rightId = leftId + pairDistance;
+                    T leftElement = a[leftId];
+                    T rightElement = a[rightId];
+                    bool needSwap = (leftElement > rightElement) ^ ((threadId >> stage) & 1);
+                    if (needSwap) {
+                        std::swap(leftElement, rightElement);
+                    }
+                    a[leftId] = leftElement;
+                    a[rightId] = rightElement;
+                });
             });
         }
     }

@@ -36,7 +36,15 @@ add_executable(main main.cpp)
 add_sycl_to_target(TARGET main SOURCES main.cpp)
 
 find_package(benchmark CONFIG REQUIRED)
-target_link_libraries(main PUBLIC benchmark::benchmark benchmark::benchmark_main)
+target_link_libraries(main PUBLIC
+    benchmark::benchmark benchmark::benchmark_main)
+
+find_package(TBB CONFIG REQUIRED)
+target_link_libraries(main PUBLIC TBB::tbb)
+
+target_compile_options(main PUBLIC
+    $<$<COMPILE_LANG_AND_ID:CXX,GNU>:-mavx2$<SEMICOLON>-mfma>
+    $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/arch:AVX2>)
 
 # find_package(OpenMP)
 # if (TARGET OpenMP::OpenMP_CXX)
