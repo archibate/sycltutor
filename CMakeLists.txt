@@ -48,9 +48,9 @@ target_compile_options(main PUBLIC
     $<$<COMPILE_LANG_AND_ID:CXX,GNU>:-march=native>
     $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/arch:AVX2>)
 
-# find_package(OpenMP)
-# if (TARGET OpenMP::OpenMP_CXX)
-#     target_link_libraries(main PUBLIC OpenMP::OpenMP_CXX)
-# else()
-#     message(WARNING "OpenMP for C++ not found")
-# endif()
+find_package(OpenMP)
+if (TARGET OpenMP::OpenMP_CXX)
+    target_link_libraries(main PUBLIC OpenMP::OpenMP_CXX)
+else()
+    message(WARNING "OpenMP for C++ not found")
+endif()
