@@ -39,11 +39,13 @@ find_package(benchmark CONFIG REQUIRED)
 target_link_libraries(main PUBLIC
     benchmark::benchmark benchmark::benchmark_main)
 
+target_include_directories(main PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
 find_package(TBB CONFIG REQUIRED)
 target_link_libraries(main PUBLIC TBB::tbb)
 
 target_compile_options(main PUBLIC
-    $<$<COMPILE_LANG_AND_ID:CXX,GNU>:-mavx2$<SEMICOLON>-mfma>
+    $<$<COMPILE_LANG_AND_ID:CXX,GNU>:-march=native>
     $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/arch:AVX2>)
 
 # find_package(OpenMP)
