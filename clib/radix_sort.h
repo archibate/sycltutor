@@ -4,8 +4,7 @@
 #include "exclusive_scan.h"
 
 class KT_radix_sort_histogram;
-class KT_radix_sort_compindex;
-class KT_radix_sort_reorder;
+class KT_radix_sort_scatter;
 
 template <
     sycl::memory_order memord = sycl::memory_order_relaxed,
@@ -28,7 +27,6 @@ void unlock(T &t) {
 inline void radix_sort(sycl::queue &q, sycl::buffer<unsigned> &buf) {
     sycl::buffer<unsigned> buf_next{buf.size()};
     sycl::buffer<unsigned> hist_group{buf.size()};
-    sycl::buffer<unsigned> index_buf{buf.size()};
     for (int bit = 0; bit < 4; bit++) {
         q.submit([&] (sycl::handler &cgh) {
             sycl::local_accessor<unsigned> count{256, cgh};
@@ -50,11 +48,11 @@ inline void radix_sort(sycl::queue &q, sycl::buffer<unsigned> &buf) {
         exclusive_scan(q, hist_group);
         q.submit([&] (sycl::handler &cgh) {
             sycl::local_accessor<unsigned> count{256, cgh};
-            sycl::local_accessor<unsigned, 1> bits{256 * 9, cgh};
+            sycl::local_accessor<unsigned> bits{256 * 9, cgh};
             sycl::accessor hist{hist_group, cgh, sycl::read_only};
             sycl::accessor a{buf, cgh, sycl::read_only};
-            sycl::accessor indices{index_buf, cgh, sycl::write_only, sycl::no_init};
-            cgh.parallel_for<KT_radix_sort_compindex>(sycl::nd_range<1>{buf.size(), 256}, [=] (sycl::nd_item<1> it) {
+            sycl::accessor aout{buf_next, cgh, sycl::write_only, sycl::no_init};
+            cgh.parallel_for<KT_radix_sort_scatter>(sycl::nd_range<1>{buf.size(), 256}, [=] (sycl::nd_item<1> it) {
                 int ii = it.get_local_id(0);
                 int gi = it.get_group(0);
                 int gn = it.get_group_range(0);
@@ -75,16 +73,8 @@ inline void radix_sort(sycl::queue &q, sycl::buffer<unsigned> &buf) {
                         mask &= (1u << (ii & 31)) - 1u;
                     popcorns += sycl::popcount(mask);
                 }
-                indices[i] = count[key] + popcorns;
-            });
-        });
-        q.submit([&] (sycl::handler &cgh) {
-            sycl::accessor indices{index_buf, cgh, sycl::read_only};
-            sycl::accessor a{buf, cgh, sycl::read_only};
-            sycl::accessor aout{buf_next, cgh, sycl::write_only, sycl::no_init};
-            cgh.parallel_for<KT_radix_sort_reorder>(sycl::nd_range<1>{buf.size(), 256}, [=] (sycl::nd_item<1> it) {
-                int i = it.get_global_id(0);
-                aout[indices[i]] = a[i];
+                unsigned index = count[key] + popcorns;
+                aout[index] = a[i];
             });
         });
         std::swap(buf, buf_next);

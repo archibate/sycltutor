@@ -7,6 +7,6 @@ if false; then
     # export _POST_CMAKE_CONFIG_CMD="sed -i 's/\(-fsycl\|-DHIPSYCL_DEBUG_LEVEL=[0-9]\)/\1 -I$(echo "$PWD" | sed 's/\//\\\//g')\/.clangd_fake_sycl_include/g' build/compile_commands.json"
     export _POST_CMAKE_CONFIG_CMD="sed -i 's/\(\/bin\/dpcpp\)/\1 -I$(echo "$PWD" | sed 's/\//\\\//g')\/.clangd_fake_sycl_include/g' build/compile_commands.json"
 else
-    export OPENSYCL_TARGETS='cuda:sm_75'
+    export OPENSYCL_TARGETS='omp;cuda:sm_75'
     export PS1="(opensycl) $PS1"
 fi

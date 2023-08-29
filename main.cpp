@@ -7,7 +7,7 @@
 #include "utils/ticktock.h"
 
 int main() {
-    constexpr size_t n = 1 * 256 * 256 * 256;
+    constexpr size_t n = 4 * 256 * 256 * 256;
     {
         sycl::queue q{sycl::gpu_selector_v};
         std::cerr << q.get_device().get_info<sycl::info::device::name>() << std::endl;
