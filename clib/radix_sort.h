@@ -54,7 +54,6 @@ inline void radix_sort(sycl::queue &q, sycl::buffer<unsigned> &buf) {
             sycl::accessor hist{hist_group, cgh, sycl::read_only};
             sycl::accessor a{buf, cgh, sycl::read_only};
             sycl::accessor indices{index_buf, cgh, sycl::write_only, sycl::no_init};
-            /* sycl::stream cout{65536, 2048, cgh}; */
             cgh.parallel_for<KT_radix_sort_compindex>(sycl::nd_range<1>{buf.size(), 256}, [=] (sycl::nd_item<1> it) {
                 int ii = it.get_local_id(0);
                 int gi = it.get_group(0);
@@ -67,17 +66,14 @@ inline void radix_sort(sycl::queue &q, sycl::buffer<unsigned> &buf) {
                 }
                 it.barrier(sycl::access::fence_space::local_space);
                 unsigned key = (a[i] >> bit * 8) & 0xff;
-                key *= 9;
-                atomic_ref(bits[key + (ii >> 5)]).fetch_or(1u << (ii & 31));
+                atomic_ref(bits[key * 9 + (ii >> 5)]).fetch_or(1u << (ii & 31));
                 it.barrier(sycl::access::fence_space::local_space);
                 int popcorns = 0;
-                for (int k = 0; k < 8; k++) {
-                    if (k <= (ii >> 5)) {
-                        unsigned mask = bits[key + k];
-                        if (ii < (k + 1) * 32)
-                            mask &= (1u << (ii & 31)) - 1u;
-                        popcorns += __builtin_popcount(mask);
-                    }
+                for (int k = 0; k <= (ii >> 5); k++) {
+                    unsigned mask = bits[key * 9 + k];
+                    if (ii < (k + 1) * 32)
+                        mask &= (1u << (ii & 31)) - 1u;
+                    popcorns += sycl::popcount(mask);
                 }
                 indices[i] = count[key] + popcorns;
             });
@@ -86,10 +82,9 @@ inline void radix_sort(sycl::queue &q, sycl::buffer<unsigned> &buf) {
             sycl::accessor indices{index_buf, cgh, sycl::read_only};
             sycl::accessor a{buf, cgh, sycl::read_only};
             sycl::accessor aout{buf_next, cgh, sycl::write_only, sycl::no_init};
-            cgh.parallel_for<KT_radix_sort_reorder>(sycl::nd_range<1>{buf.size() / 2, 128}, [=] (sycl::nd_item<1> it) {
-                int i = it.get_global_id(0) * 2;
+            cgh.parallel_for<KT_radix_sort_reorder>(sycl::nd_range<1>{buf.size(), 256}, [=] (sycl::nd_item<1> it) {
+                int i = it.get_global_id(0);
                 aout[indices[i]] = a[i];
-                aout[indices[i + 1]] = a[i + 1];
             });
         });
         std::swap(buf, buf_next);

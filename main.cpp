@@ -1,7 +1,7 @@
 #include <sycl/sycl.hpp>
 #include "utils/wangshash.h"
-#include "clib/radix_sort.h"
 #include "clib/print_buffer.h"
+#include "clib/radix_sort.h"
 #include <vector>
 #include <execution>
 #include "utils/ticktock.h"
