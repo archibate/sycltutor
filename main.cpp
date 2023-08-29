@@ -1,22 +1,23 @@
 #include <sycl/sycl.hpp>
 #include "utils/wangshash.h"
 #include "clib/radix_sort.h"
+#include "clib/print_buffer.h"
 #include <vector>
 #include <execution>
 #include "utils/ticktock.h"
 
 int main() {
-    constexpr size_t n = 4 * 256 * 256 * 256;
+    constexpr size_t n = 1 * 256 * 256 * 256;
     {
         sycl::queue q{sycl::gpu_selector_v};
         std::cerr << q.get_device().get_info<sycl::info::device::name>() << std::endl;
-        std::vector<unsigned int> arr(n);
+        std::vector<unsigned> arr(n);
         for (int i = 0; i < arr.size(); i++) {
             arr[i] = wangshash(i)();
         }
         TICK(radix);
         {
-            sycl::buffer<unsigned int> buf{arr};
+            sycl::buffer<unsigned> buf{arr};
             radix_sort(q, buf);
         }
         TOCK(radix);
@@ -24,10 +25,11 @@ int main() {
             printf("sorted successfully\n");
         } else {
             printf("not sorted since %ld\n", it - arr.begin());
+            print_buffer(arr);
         }
     }
     {
-        std::vector<unsigned int> arr(n);
+        std::vector<unsigned> arr(n);
         for (int i = 0; i < arr.size(); i++) {
             arr[i] = wangshash(i)();
         }

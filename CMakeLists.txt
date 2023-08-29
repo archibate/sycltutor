@@ -9,8 +9,7 @@ if (DEFINED ENV{DPCPP_ROOT} AND NOT DEFINED DPCPP_ROOT)
     set(DPCPP_ROOT $ENV{DPCPP_ROOT})
 endif()
 if (DEFINED DPCPP_ROOT)
-    set(CMAKE_CXX_COMPILER ${DPCPP_ROOT}/bin/icpx)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl")
+    set(CMAKE_CXX_COMPILER ${DPCPP_ROOT}/bin/dpcpp CACHE STRING "CXX compiler (force set by DPCPP_ROOT)" FORCE)
 endif()
 
 project(main LANGUAGES CXX)
@@ -39,6 +38,7 @@ find_package(benchmark CONFIG REQUIRED)
 target_link_libraries(main PUBLIC
     benchmark::benchmark benchmark::benchmark_main)
 
+target_include_directories(main PUBLIC ${DPCPP_ROOT}/include)
 target_include_directories(main PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 find_package(TBB CONFIG REQUIRED)
@@ -48,9 +48,9 @@ target_compile_options(main PUBLIC
     $<$<COMPILE_LANG_AND_ID:CXX,GNU>:-march=native>
     $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/arch:AVX2>)
 
-find_package(OpenMP)
-if (TARGET OpenMP::OpenMP_CXX)
-    target_link_libraries(main PUBLIC OpenMP::OpenMP_CXX)
-else()
-    message(WARNING "OpenMP for C++ not found")
-endif()
+# find_package(OpenMP)
+# if (TARGET OpenMP::OpenMP_CXX)
+#     target_link_libraries(main PUBLIC OpenMP::OpenMP_CXX)
+# else()
+#     message(WARNING "OpenMP for C++ not found")
+# endif()

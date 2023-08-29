@@ -1,5 +1,12 @@
 # vim: ft=bash
-source /opt/intel/oneapi/compiler/2023.1.0/env/vars.sh
-export CLANGD_FLAGS="--enable-config"
-#export _POST_CMAKE_CONFIG_CMD="sed -i 's/\(-fsycl\|-DHIPSYCL_DEBUG_LEVEL=[0-9]\)/\1 -I$(echo "$PWD" | sed 's/\//\\\//g')\/.clangd_fake_sycl_include/g' build/compile_commands.json"
-export OPENSYCL_TARGETS='cuda:sm_75'
+if false; then
+    source /opt/intel/oneapi/compiler/2023.1.0/env/vars.sh
+    source /opt/intel/oneapi/debugger/2023.1.0/env/vars.sh
+    export DPCPP_ROOT=/opt/intel/oneapi/compiler/2023.1.0/linux
+    export PS1="(dpcpp) $PS1"
+    # export _POST_CMAKE_CONFIG_CMD="sed -i 's/\(-fsycl\|-DHIPSYCL_DEBUG_LEVEL=[0-9]\)/\1 -I$(echo "$PWD" | sed 's/\//\\\//g')\/.clangd_fake_sycl_include/g' build/compile_commands.json"
+    export _POST_CMAKE_CONFIG_CMD="sed -i 's/\(\/bin\/dpcpp\)/\1 -I$(echo "$PWD" | sed 's/\//\\\//g')\/.clangd_fake_sycl_include/g' build/compile_commands.json"
+else
+    export OPENSYCL_TARGETS='cuda:sm_75'
+    export PS1="(opensycl) $PS1"
+fi
