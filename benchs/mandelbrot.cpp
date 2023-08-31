@@ -6,7 +6,7 @@ static void paint(sycl::queue &q, sycl::buffer<float, 2> &buf) {
     q.submit([&] (sycl::handler &cgh) {
         sycl::accessor axr{buf, cgh, sycl::write_only, sycl::no_init};
         cgh.parallel_for(axr.get_range(), [=] (sycl::id<2> id) {
-            auto c = std::complex{(float)id[0] / axr.get_range()[0], (float)id[1] / axr.get_range()[1]};
+            std::complex c{(float)id[0] / axr.get_range()[0], (float)id[1] / axr.get_range()[1]};
             auto z = c;
             int iterations = 0;
             while (c.real() * c.real() + c.imag() * c.imag() < 4 && iterations < 50) {

@@ -35,7 +35,7 @@ int main() {
         }
         TICK(tbb);
         {
-            std::sort(std::execution::par, arr.begin(), arr.end());
+            std::sort(std::execution::par_unseq, arr.begin(), arr.end());
         }
         TOCK(tbb);
     }

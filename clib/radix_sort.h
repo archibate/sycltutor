@@ -71,7 +71,11 @@ inline void radix_sort(sycl::queue &q, sycl::buffer<unsigned> &buf) {
                     unsigned mask = bits[key * 9 + k];
                     if (ii < (k + 1) * 32)
                         mask &= (1u << (ii & 31)) - 1u;
+#if defined(__GNUC__) && defined(__OPENSYCL__)
+                    popcorns += __builtin_popcount(mask);
+#else
                     popcorns += sycl::popcount(mask);
+#endif
                 }
                 unsigned index = count[key] + popcorns;
                 aout[index] = a[i];

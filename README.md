@@ -84,13 +84,13 @@ In file included from /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/13.1.1/../../../
 You should modify the file `/usr/lib/clang/*.*.*/include/__clang_cuda_runtime_wrapper.h`:
 
 ```diff
-#if CUDA_VERSION < 9000
-#include "crt/device_runtime.h"
-#endif
-#include "crt/host_runtime.h"
+ #if CUDA_VERSION < 9000
+ #include "crt/device_runtime.h"
+ #endif
+ #include "crt/host_runtime.h"
 +#undef __noinline__
-// device_runtime.h defines __cxa_* macros that will conflict with
-// cxxabi.h.
+ // device_runtime.h defines __cxa_* macros that will conflict with
+ // cxxabi.h.
 ```
 
 > So you are 'Okay' with this 'diff' view, right?
@@ -150,4 +150,4 @@ Source: https://forum.manjaro.org/t/clinfo-and-codes-using-opencl-hangs-forever-
 
 - SYCL official guide (cheetsheet): https://www.khronos.org/files/sycl/sycl-2020-reference-guide.pdf
 - SYCL official specification: https://registry.khronos.org/SYCL/specs/sycl-2020/html/sycl-2020.html
-- Parallel STL based on SYCL: https://github.com/KhronosGroup/SyclParallelSTL
+- OpenSYCL support for C++17 parallel STL: https://github.com/OpenSYCL/OpenSYCL/blob/develop/doc/stdpar.md
