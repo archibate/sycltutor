@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.10)
 
 if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
@@ -27,11 +27,12 @@ endif()
 add_executable(main main.cpp)
 add_sycl_to_target(TARGET main SOURCES main.cpp)
 
-find_package(benchmark CONFIG REQUIRED)
-target_link_libraries(main PUBLIC
-    benchmark::benchmark benchmark::benchmark_main)
+find_package(benchmark CONFIG)
+if (benchmark_FOUND)
+    target_link_libraries(main PUBLIC
+        benchmark::benchmark benchmark::benchmark_main)
+endif()
 
-target_include_directories(main PUBLIC ${DPCPP_ROOT}/include)
 target_include_directories(main PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 find_package(TBB CONFIG REQUIRED)
