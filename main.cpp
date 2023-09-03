@@ -1,4 +1,3 @@
-#include <sycl/sycl.hpp>
 #include "utils/wangshash.h"
 #include "clib/print_buffer.h"
 #include "clib/radix_sort.h"
@@ -19,6 +18,7 @@ int main() {
         {
             sycl::buffer<unsigned> buf{arr};
             radix_sort(q, buf);
+            q.wait();
         }
         TOCK(radix);
         if (auto it = std::is_sorted_until(arr.begin(), arr.end()); it == arr.end()) {

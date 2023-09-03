@@ -38,7 +38,7 @@ cmake --build build --parallel 8
 Here is a possible value for the environment variable `OPENSYCL_TARGETS`:
 
 ```bash
-export OPENSYCL_TARGETS="omp.accelerated;spirv;cuda:sm_60,sm_75,sm_80;hip:gfx906"
+export OPENSYCL_TARGETS="omp.accelerated;generic;cuda:sm_60,sm_75,sm_80;hip:gfx906"
 ```
 
 ## Running the project
@@ -127,6 +127,32 @@ Source: https://discourse.llvm.org/t/compiling-cuda-programs-with-clang-14-15/70
 ```
 
 The stupid CUDA compiler still doesn't support C++20, just keep `set(CMAKE_CXX_STANDARD 17)`.
+
+## hipSYCL Error CU:218 when OPENSYCL_TARGETS=generic
+
+You got this error even when the kernel is empty (see https://github.com/OpenSYCL/OpenSYCL/pull/1118#discussion_r1314053288):
+
+```
+[hipSYCL Error] from /home/bate/Codes/OpenSYCL/src/runtime/cuda/cuda_code_object.cpp:96 @ build_cuda_module_from_ptx(): cuda_executable_object: could not load module (error code = CU:218)
+[hipSYCL Error] from /home/bate/Codes/OpenSYCL/include/hipSYCL/runtime/kernel_cache.hpp:421 @ get_or_construct_code_object_impl(): kernel_cache: code object creation has failed
+[hipSYCL Error] from /home/bate/Codes/OpenSYCL/src/runtime/cuda/cuda_queue.cpp:704 @ submit_sscp_kernel_from_code_object(): cuda_queue: Code object construction failed
+```
+
+This is an libstdc++ bug. Please modify the `/usr/c++/*.*.*/iostream` as follows:
+
+```
+   // For construction of filebuffers for cout, cin, cerr, clog et. al.
+   // When the init_priority attribute is usable, we do this initialization
+   // in the compiled library instead (src/c++98/globals_io.cc).
+-#if !__has_attribute(__init_priority__)
++#if !__has_attribute(__init_priority__) || defined(__OPENSYCL__)
+   static ios_base::Init __ioinit;
+ #elif defined(_GLIBCXX_SYMVER_GNU)
+   __extension__ __asm (".globl _ZSt21ios_base_library_initv");
+ #endif
+```
+
+Yeah, the LLVM middle-end doesn't recognize `.globl` as assembly instruction.
 
 ## program stucks
 

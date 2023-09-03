@@ -6,7 +6,7 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(SYCL_COMPILER IntelSYCL CACHE STRING "Choices are: IntelSYCL, OpenSYCL")
+set(SYCL_COMPILER OpenSYCL CACHE STRING "Choices are: IntelSYCL, OpenSYCL")
 if (SYCL_COMPILER MATCHES "IntelSYCL")
     set(CMAKE_CXX_COMPILER "icpx" CACHE STRING "IntelSYCL must use icpx as C++ compiler" FORCE)
 endif()
